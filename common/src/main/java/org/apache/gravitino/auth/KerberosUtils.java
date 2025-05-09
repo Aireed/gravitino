@@ -122,6 +122,8 @@ public class KerberosUtils {
         options.put("useKeyTab", "true");
         options.put("keyTab", keyTabFile);
         options.put("storeKey", "true");
+      } else {
+        options.put("useKeyTab", "false");
       }
 
       options.put("principal", principal);

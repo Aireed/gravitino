@@ -171,6 +171,20 @@ public class GravitinoDriverPlugin implements DriverPlugin {
     ClientBuilder builder = GravitinoClient.builder(uri).withMetalake(metalake);
     String authType =
         sparkConf.get(GravitinoSparkConfig.GRAVITINO_AUTH_TYPE, AuthProperties.SIMPLE_AUTH_TYPE);
+    String principalFromCache = null;
+    // try to use cache to decide the authType
+    if (!sparkConf.contains(GravitinoSparkConfig.GRAVITINO_AUTH_TYPE)) {
+      try {
+        authType =
+            UserGroupInformation.getCurrentUser().hasKerberosCredentials()
+                ? AuthProperties.KERBEROS_AUTH_TYPE
+                : authType;
+        principalFromCache = UserGroupInformation.getCurrentUser().getUserName();
+      } catch (Exception e) {
+        LOG.error("Failed to get currentUser", e);
+      }
+    }
+
     if (AuthProperties.isSimple(authType)) {
       Preconditions.checkArgument(
           !UserGroupInformation.isSecurityEnabled(),
@@ -192,13 +206,18 @@ public class GravitinoDriverPlugin implements DriverPlugin {
       builder.withOAuth(oAuth2TokenProvider);
     } else if (AuthProperties.isKerberos(authType)) {
       String principal =
-          getRequiredConfig(sparkConf, GravitinoSparkConfig.GRAVITINO_KERBEROS_PRINCIPAL);
+          getOptionalConfig(sparkConf, GravitinoSparkConfig.GRAVITINO_KERBEROS_PRINCIPAL);
+      if (!sparkConf.contains(GravitinoSparkConfig.GRAVITINO_KERBEROS_PRINCIPAL)) {
+        // use cache principal to set user principal
+        principal = principalFromCache;
+      }
+
       String keyTabFile =
-          getRequiredConfig(sparkConf, GravitinoSparkConfig.GRAVITINO_KERBEROS_KEYTAB_FILE_PATH);
+          getOptionalConfig(sparkConf, GravitinoSparkConfig.GRAVITINO_KERBEROS_KEYTAB_FILE_PATH);
       KerberosTokenProvider kerberosTokenProvider =
           KerberosTokenProvider.builder()
               .withClientPrincipal(principal)
-              .withKeyTabFile(new File(keyTabFile))
+              .withKeyTabFile(keyTabFile != null ? new File(keyTabFile) : null)
               .build();
       builder.withKerberosAuth(kerberosTokenProvider);
     } else {
